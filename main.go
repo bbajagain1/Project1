@@ -10,8 +10,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-
-	"github.com/olekukonko/tablewriter"
 )
 
 func main() {

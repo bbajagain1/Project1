@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"sort"
 )
 
 type (
@@ -77,9 +78,160 @@ func FCFSSchedule(w io.Writer, title string, processes []Process) {
 	outputSchedule(w, schedule, aveWait, aveTurnaround, aveThroughput)
 }
 
-func SJFSchedule(w io.Writer, title string, processes []Process) {}
+func SJFSchedule(w io.Writer, title string, processes []Process) {
+	var (
+		serviceTime     int64
+		totalWait       float64
+		totalTurnaround float64
+		lastCompletion  float64
+		schedule        = make([][]string, len(processes))
+		gantt           = make([]TimeSlice, 0)
+	)
+	remaining := make([]Process, len(processes))
+	copy(remaining, processes)
 
-func SJFPrioritySchedule(w io.Writer, title string, processes []Process) {}
+	byArrivalTime := func(p1, p2 *Process) bool {
+		return p1.ArrivalTime < p2.ArrivalTime
+	}
+
+	// Sort processes by arrival time
+	// This is so we can determine which processes are available at the current service time
+	// Also, this makes SJF scheduling deterministic
+	sort.SliceStable(remaining, byArrivalTime)
+
+	for len(remaining) > 0 {
+		next := findShortestJob(remaining, serviceTime)
+		if next == nil {
+			// No available jobs
+			serviceTime++
+			continue
+		}
+
+		process := *next
+		remaining = removeProcess(remaining, process)
+
+		waitingTime := serviceTime - process.ArrivalTime
+		if waitingTime < 0 {
+			waitingTime = 0
+		}
+		totalWait += float64(waitingTime)
+
+		start := serviceTime
+
+		turnaround := process.BurstDuration + waitingTime
+		totalTurnaround += float64(turnaround)
+
+		completion := process.BurstDuration + serviceTime
+		lastCompletion = float64(completion)
+
+		schedule[process.ProcessID-1] = []string{
+			fmt.Sprint(process.ProcessID),
+			fmt.Sprint(process.Priority),
+			fmt.Sprint(process.BurstDuration),
+			fmt.Sprint(process.ArrivalTime),
+			fmt.Sprint(waitingTime),
+			fmt.Sprint(turnaround),
+			fmt.Sprint(completion),
+		}
+
+		gantt = append(gantt, TimeSlice{
+			PID:   process.ProcessID,
+			Start: start,
+			Stop:  completion,
+		})
+
+		serviceTime += process.BurstDuration
+	}
+
+	count := float64(len(processes))
+	aveWait := totalWait / count
+	aveTurnaround := totalTurnaround / count
+	aveThroughput := count / lastCompletion
+
+	outputTitle(w, title)
+	outputGantt(w, gantt)
+	outputSchedule(w, schedule, aveWait, aveTurnaround, aveThroughput)
+}
+
+func findShortestJob(remaining []Process, serviceTime int64) *Process {
+	var shortest *Process
+	for i := range remaining {
+		if remaining[i].ArrivalTime > serviceTime {
+			// The remaining processes are sorted by arrival time, so we can stop checking if this process
+			// has not yet arrived
+			break
+		}
+		if shortest == nil || remaining[i].BurstDuration < shortest.BurstDuration {
+			shortest = &remaining[i]
+		}
+	}
+	return shortest
+}
+
+func removeProcess(processes []Process, process Process) []Process {
+	var remaining []Process
+	for i := range processes {
+		if processes[i].ProcessID != process.ProcessID {
+			remaining = append(remaining, processes[i])
+		}
+	}
+	return remaining
+}
+
+type Process1 struct {
+	Name       string
+	Burst      int
+	Arrival    int
+	Priority   int
+	Completed  bool
+	Turnaround int
+	Waiting    int
+}
+
+func SJFPrioritySchedule(w io.Writer, title string, processes []Process1) {
+	fmt.Fprintf(w, "------ %s ------\n", title)
+
+	completed := 0
+	currentTime := 0
+	var waiting []Process1
+	var active *Process1
+
+	for completed < len(processes) {
+		for i := range processes {
+			if !processes[i].Completed && processes[i].Arrival <= currentTime {
+				waiting = append(waiting, processes[i])
+			}
+		}
+		sort.Slice(waiting, func(i, j int) bool {
+			return waiting[i].Burst < waiting[j].Burst
+		})
+		if active == nil && len(waiting) > 0 {
+			active = &waiting[0]
+			waiting = waiting[1:]
+		}
+		if active != nil {
+			active.Burst--
+			if active.Burst == 0 {
+				active.Completed = true
+				completed++
+				active.Turnaround = currentTime + 1 - active.Arrival
+				active.Waiting = active.Turnaround - active.Priority
+				active = nil
+			}
+		}
+		currentTime++
+	}
+
+	var totalTurnaround, totalWaiting int
+	for i := range processes {
+		totalTurnaround += processes[i].Turnaround
+		totalWaiting += processes[i].Waiting
+	}
+
+	fmt.Fprintf(w, "Average turnaround time: %.2f\n", float64(totalTurnaround)/float64(len(processes)))
+	fmt.Fprintf(w, "Average waiting time: %.2f\n", float64(totalWaiting)/float64(len(processes)))
+	fmt.Fprintf(w, "Throughput: %.2f\n", float64(len(processes))/float64(currentTime))
+}
 
 func RRSchedule(w io.Writer, title string, processes []Process) {}
 
