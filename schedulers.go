@@ -94,9 +94,6 @@ func SJFSchedule(w io.Writer, title string, processes []Process) {
 		return p1.ArrivalTime < p2.ArrivalTime
 	}
 
-	// Sort processes by arrival time
-	// This is so we can determine which processes are available at the current service time
-	// Also, this makes SJF scheduling deterministic
 	sort.SliceStable(remaining, byArrivalTime)
 
 	for len(remaining) > 0 {
@@ -157,8 +154,6 @@ func findShortestJob(remaining []Process, serviceTime int64) *Process {
 	var shortest *Process
 	for i := range remaining {
 		if remaining[i].ArrivalTime > serviceTime {
-			// The remaining processes are sorted by arrival time, so we can stop checking if this process
-			// has not yet arrived
 			break
 		}
 		if shortest == nil || remaining[i].BurstDuration < shortest.BurstDuration {
