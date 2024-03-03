@@ -1,4 +1,4 @@
-module github.com/bbajagain1/Project1
+module main
 
 go 1.22.0
 
